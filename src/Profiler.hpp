@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iostream>
-#include <ctime>
+#include <chrono>
 #include <map>
 #include <stack>
 #include <algorithm>
@@ -10,6 +10,17 @@
 
 #define ROOT_ID 0
 
+typedef std::chrono::time_point<std::chrono::high_resolution_clock> time_point_t;
+
+time_point_t get_time() {
+	return std::chrono::high_resolution_clock::now();
+}
+
+double ns2ms(double nseconds) {
+	std::chrono::duration<double, std::nano> ns(nseconds);
+	return std::chrono::duration_cast<std::chrono::milliseconds>(ns).count();
+}
+		
 class Profiler {
 
 public:
@@ -70,14 +81,13 @@ public:
 	class Stats {
 	public:
 		Stats() {}
-		Stats(Key k, timespec s, int p, std::size_t tid) : key(k),
-								   start(s),
-								   parent(p),
-								   count(1),
-								   paralel(false),
-								   thread_id(tid) {}
-
-		struct timespec start, finish;
+		Stats(Key k, time_point_t s, int p, std::size_t tid) : key(k),
+								 start(s),
+								 parent(p),
+								 count(1),
+								 paralel(false),
+								 thread_id(tid) {}
+		time_point_t start, finish;
 		Key key;
 		double total;
 		long count;
@@ -85,11 +95,8 @@ public:
 		int parent;
 		std::size_t thread_id;
 
-		double seconds_elapsed() {
-			double elapsed;
-			elapsed = (finish.tv_sec - start.tv_sec);
-			elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-			return elapsed;
+		double nanoseconds_elapsed() {
+			return std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
 		}
 	};
 
@@ -97,20 +104,18 @@ public:
 		
 		std::unique_lock<std::mutex> lock(profile_mutex());
 
-		timespec starting_time = Profiler::get_time();
 		std::hash<std::thread::id> hasher;
 		std::size_t tid = hasher(std::this_thread::get_id()); 
 
 		if (!Profiler::keymap().exists("__root__")) {
-			Profiler::stats().push_back(Stats("__root__", starting_time, -1, tid));
-			Profiler::stats()[0].finish = starting_time;
+			Profiler::stats().push_back(Stats("__root__", get_time(), -1, tid));
+			Profiler::stats()[0].finish = get_time();
 			Profiler::keymap()["__root__"] = 0;
 		}
 
 		if (keymap().exists(key, tid)) {
 			int id = keymap().get(_key, tid);
 			Profiler::stats()[id].count++;
-			Profiler::stats()[id].start = starting_time;
 			Profiler::hierarchy()[tid].push(id);
 			//assert should have the same parent
 		}
@@ -120,28 +125,30 @@ public:
 			int parent = 0;
 			if (hierarchy()[tid].size() > 0) parent = Profiler::hierarchy()[tid].top();
 			Profiler::stats().push_back(Stats(key,
-							  starting_time,
+							  get_time(),
 							  parent,
 							  tid));
 			Profiler::hierarchy()[tid].push(id);
 		}
+		Profiler::stats()[keymap().get(_key, tid)].start = get_time();	
 	}
 	
 	~Profiler() {
+		time_point_t end_time = get_time();
+
 		std::unique_lock<std::mutex> lock(profile_mutex());
 
 		//TODO refactor
 		std::hash<std::thread::id> hasher;
 		std::size_t tid = hasher(std::this_thread::get_id());
-
-		timespec end_time = Profiler::get_time();
 		Stats & s = Profiler::stats()[keymap()[_key]];
-		s.finish = end_time;
-		s.total += s.seconds_elapsed();		
 		Profiler::hierarchy()[tid].pop();
-		if (end_time.tv_sec > Profiler::stats()[ROOT_ID].finish.tv_sec) {
+
+		s.finish = end_time;
+		s.total += s.nanoseconds_elapsed();		
+		if (end_time > Profiler::stats()[ROOT_ID].finish) {
 			Profiler::stats()[ROOT_ID].finish = end_time;
-			Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].seconds_elapsed();
+			Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].nanoseconds_elapsed();
 		}
 	}
 
@@ -182,12 +189,6 @@ public:
 		return sorted;
 	}
 
-	static timespec get_time() {
-		struct timespec time;
-		clock_gettime(CLOCK_MONOTONIC, &time);
-		return time;
-	}
-
 	static std::vector<Stats> getFusedStats() {
 
 		std::map<Key, Stats> key_stats;	
@@ -205,7 +206,7 @@ public:
 			else {
 				key_stats[key].count += s.count;
 				key_stats[key].paralel = true;
-				key_stats[key].total += s.seconds_elapsed();
+				key_stats[key].total += s.nanoseconds_elapsed();
 			}
 			idx++;
 		}
@@ -225,6 +226,10 @@ public:
 			fstats.push_back(fs);
 		}
 		return fstats;
+	}
+
+	static double getTimeInMilis(Key key) {
+		return ns2ms(stats()[keymap()[key]].total);
 	}
 	
 	static void clear() {
@@ -312,23 +317,23 @@ private:
 			printcol(name);
 
 			char col[100];
-			sprintf(col, "%d/%c (%03.3f sec.)", node->stats.count,
+			sprintf(col, "%d/%c (%03.3f ms.)", node->stats.count,
 				node->stats.paralel?'P':'S',
-				node->stats.total/node->stats.count);
+				ns2ms(node->stats.total)/node->stats.count);
 			printcol(std::string(col));
-			sprintf(col, "%03.3f sec.", node->stats.total);
+			sprintf(col, "%03.3f ms.", ns2ms(node->stats.total));
 			printcol(std::string(col));
 
 			float perc;
 			if (node->stats.paralel) {
-				perc = ((node->stats.total/node->stats.count)/total_time) * 100;
+				perc = ((ns2ms(node->stats.total)/node->stats.count)/total_time) * 100;
 			}
 			else {
-				perc = ((node->stats.total)/total_time) * 100;
+				perc = ((ns2ms(node->stats.total))/total_time) * 100;
 			}
 			
 			sprintf(col, "%03d%% (%03d%% of total)",
-				int((node->stats.total/total_time) * 100),
+				int((ns2ms(node->stats.total)/total_time) * 100),
 				int(perc));
 
 			printcol(std::string(col));
@@ -360,7 +365,7 @@ private:
 			printTopLine();
 			std::cout << std::endl;
 
-			print(&hierarchy[0], 0, fstats[0].total);
+			print(&hierarchy[0], 0, ns2ms(fstats[0].total));
 
 			printBottomLine();
 			std::cout << std::endl;
