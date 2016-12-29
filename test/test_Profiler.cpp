@@ -9,18 +9,18 @@ TEST(TestProfiler, Profiler) {
 	int mcs = 200000;
 	
 	{
-		Profiler p("P1");
+		__PROF(P1);
 		usleep(mcs);
 	}
 
 	{
 		mcs = 400000;
-		Profiler p2("P2");
+		__PROF(P2)
 		usleep(mcs);
 
 		{
 			mcs = 100000;
-			Profiler p3("P3");
+			__PROF(P3)
 			usleep(mcs);
 		}
 
@@ -42,15 +42,15 @@ TEST(TestProfiler, Paralel) {
 	
 	#pragma omp parallel for
 	for (int i = 0; i < 4; i++) {
-		Profiler p("R1");
+		__PROF(P1)
 		usleep(mcs);
 	}
 
-	EXPECT_EQ(Profiler::getTimeInMilis("R1"), 500.0d);
+	EXPECT_EQ(Profiler::getTimeInMilis("P1"), 500.0d);
 	
 	std::vector<Profiler::Stats> fstats = Profiler::getFusedStats();
 	for (auto s : fstats) {
-		if (s.key == "R1") {
+		if (s.key == "P1") {
 			EXPECT_EQ(Profiler::getTimeInMilis(s), 4*500.0d);
 		}
 	}

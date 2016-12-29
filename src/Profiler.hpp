@@ -10,6 +10,8 @@
 
 #define ROOT_ID 0
 
+#define __PROF(x) Profiler profile_##x(#x);
+
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> time_point_t;
 
 time_point_t get_time() {
@@ -130,6 +132,7 @@ public:
 							  tid));
 			Profiler::hierarchy()[tid].push(id);
 		}
+		
 		Profiler::stats()[keymap().get(_key, tid)].start = get_time();	
 	}
 	
