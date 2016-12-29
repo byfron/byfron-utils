@@ -32,7 +32,7 @@ public:
 		typedef std::map<Key, std::map< std::size_t, int> >::iterator  iter;
 		
 		void clear() {
-			_map.clear();
+			_map.clear();			
 		}
 		
 		bool exists(Key k) {
@@ -225,22 +225,31 @@ public:
 			
 			fstats.push_back(fs);
 		}
+
 		return fstats;
 	}
 
+	static double getTimeInMilis(Stats s) {
+		return ns2ms(s.total);
+	}
+			
 	static double getTimeInMilis(Key key) {
+		assert(keymap().exists(key));
 		return ns2ms(stats()[keymap()[key]].total);
 	}
 	
 	static void clear() {
 
-		//TODO refactor
-		std::hash<std::thread::id> hasher;
-		std::size_t tid = hasher(std::this_thread::get_id());
-		
 		std::unique_lock<std::mutex> lock(profile_mutex());
+		
 		stats().clear();
 		keymap().clear();
+		for (auto hpid : hierarchy()) { 
+			while (!hpid.second.empty() )
+			{
+				hpid.second.pop();
+			}
+		}
 	}
 
 	static std::map<int, Key> getInverseMap() {
@@ -310,7 +319,11 @@ private:
 
 		void print(Node *node, int level, float total_time) {
 
-			std::string name = node->name;
+			std::string prefix = "";
+			for (int i = 0; i < level; i++) prefix += "  ";
+			if (level) prefix += "> ";
+			
+			std::string name = prefix + node->name ;
 			if (name.size() > _colWidth) 
 				name.resize(_colWidth);
 			
@@ -338,20 +351,29 @@ private:
 
 			printcol(std::string(col));
 			std::cout << std::endl;
+
 			for (auto child : node->children)
 				print(child, level+1, total_time);
 		}
 
 		void print() {
 			std::vector<Profiler::Stats> fstats = Profiler::getFusedStats();
+
+			if (fstats.size() == 0) return;
 			
+			int root_idx;
 			std::vector<Node> hierarchy;
 			for (int i = 0; i < fstats.size(); i++) {
+
+				if (fstats[i].key == "__root__") root_idx = i;
+				
 				hierarchy.push_back(Node(fstats[i]));
 			}
 
+			
 			for (int i = 0; i < hierarchy.size(); i++) {
 				Profiler::Stats s = hierarchy[i].stats;
+
 				if (s.parent >= 0) {
 					hierarchy[s.parent].children.push_back(&hierarchy[i]);
 				}
@@ -365,7 +387,7 @@ private:
 			printTopLine();
 			std::cout << std::endl;
 
-			print(&hierarchy[0], 0, ns2ms(fstats[0].total));
+			print(&hierarchy[root_idx], 0, ns2ms(fstats[root_idx].total));
 
 			printBottomLine();
 			std::cout << std::endl;
