@@ -6,53 +6,57 @@ unsigned int microseconds;
 
 TEST(TestProfiler, Profiler) {
 
-	int mcs = 2000000;
+	int mcs = 200000;
 	
 	{
-	Profiler p("P1");
-	usleep(mcs);
+		Profiler p("P1");
+		usleep(mcs);
 	}
 
+	{
+		mcs = 400000;
+		Profiler p2("P2");
+		usleep(mcs);
+
+		{
+			mcs = 100000;
+			Profiler p3("P3");
+			usleep(mcs);
+		}
+
+	}
+
+	EXPECT_EQ(Profiler::getTimeInMilis("P1"), 200.0);
+	EXPECT_EQ(Profiler::getTimeInMilis("P2"), 500.0);
+	EXPECT_EQ(Profiler::getTimeInMilis("P3"), 100.0);
+	EXPECT_EQ(Profiler::getTimeInMilis("__root__"), 700.0);
+
 	Profiler::print();
+	Profiler::clear();
+
 }
 
-// TEST(TestProfiler, Paralel) {
+TEST(TestProfiler, Paralel) {
 
-// 	#pragma omp parallel for	
-// 	for (int i = 0; i < 3; i++)
-// 	{
-// 		Profiler p("testing no par");
-// 		sleep(1);
-// 	}
-
-// #pragma omp parallel for	
-// 	for (int i = 0; i < 4; i++)
-// 	{
-// 		Profiler p("testing");
-// 		sleep(1);
-
-// 		{
-// 			Profiler p2("son of testing sadasd asdf asdf adsf");
-// 			sleep(2);
-// 		}
-
-// 		{
-// 			Profiler p3("brother son of t");
-// 			sleep(1);
-// 		}
-// 	}
-
-// 	// {
-// 	// 	Profiler p("testing");
-// 	// 	sleep(2);
-// 	// }
+	int mcs = 500000;
 	
-// 	{
-// 		Profiler p("testing second");
-// 		sleep(1);
-// 	}
+	#pragma omp parallel for
+	for (int i = 0; i < 4; i++) {
+		Profiler p("R1");
+		usleep(mcs);
+	}
 
-// 	Profiler::print();
-// 	Profiler::clear();
-// }
+	EXPECT_EQ(Profiler::getTimeInMilis("R1"), 500.0d);
+	
+	std::vector<Profiler::Stats> fstats = Profiler::getFusedStats();
+	for (auto s : fstats) {
+		if (s.key == "R1") {
+			EXPECT_EQ(Profiler::getTimeInMilis(s), 4*500.0d);
+		}
+	}
+		
+	Profiler::print();
+	Profiler::clear();
+
+}
 
