@@ -47,6 +47,34 @@ TEST(TestProfiler, Profiler) {
 
 }
 
+TEST(TestProfiler, NumCalls) {
+
+	int mcs = 20000;
+
+	for (int i = 0; i < 5; i++)
+	{
+		__PROF(P1);
+		usleep(mcs);		
+	}
+	
+	{
+		__PROF(P2);
+		usleep(mcs);
+	}
+
+	{
+		__PROF(P1);
+		usleep(mcs);		
+	}
+
+	EXPECT_EQ(Profiler::getNumCalls("P1"), 6);
+	EXPECT_EQ(Profiler::getNumCalls("P2"), 1);
+	EXPECT_EQ(Profiler::getNumCalls("__root__"), 1);
+	Profiler::print();
+	Profiler::clear();
+}
+
+
 TEST(TestProfiler, Paralel) {
 
 	int mcs = 500000;
@@ -57,8 +85,16 @@ TEST(TestProfiler, Paralel) {
 		usleep(mcs);
 	}
 
+	{
+		mcs = 200000;
+		__PROF(P2)
+		usleep(mcs);
+	}
+				
+
 	EXPECT_EQ(Profiler::getTimeInMilis("P1"), 500.0d);
-	
+	EXPECT_EQ(Profiler::getTimeInMilis("P2"), 200.0d);
+
 	std::vector<Profiler::Stats> fstats = Profiler::getFusedStats();
 	for (auto s : fstats) {
 		if (s.key == "P1") {

@@ -69,7 +69,7 @@ public:
 		int & get(Key k, std::size_t thread_id) {
 			return _map[k][thread_id];
 		}
-		
+	      
 	private:
 		std::map<Key, std::map< std::size_t, int> > _map;
 	};
@@ -242,13 +242,21 @@ public:
 		return fstats;
 	}
 
+	static long getNumCalls(Stats s) {
+		return s.count;
+	}
+
+	static long getNumCalls(Key key) {
+		return getNumCalls(stats()[keymap()[key]]);
+	}
+	
 	static double getTimeInMilis(Stats s) {
 		return ns2ms(s.total);
 	}
 			
 	static double getTimeInMilis(Key key) {
 		assert(keymap().exists(key));
-		return ns2ms(stats()[keymap()[key]].total);
+		return getTimeInMilis(stats()[keymap()[key]]);
 	}
 	
 	static void clear() {
