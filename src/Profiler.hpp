@@ -187,7 +187,7 @@ public:
 
 		std::map<Key, Stats> key_stats;	
 		std::map<int,int> oldnewmapping;
-		std::vector<int> old_idx;
+		std::map<Key, int> old_idx;
 
 		//accumulate times per key
 		int idx = 0;
@@ -195,7 +195,7 @@ public:
 			Key key = s.key;
 			if (!key_stats.count(key)) {
 				key_stats[key] = s;
-				old_idx.push_back(idx);		       
+				old_idx[key] = idx;		       
 			}
 			else {
 				key_stats[key].count += s.count; 
@@ -206,7 +206,7 @@ public:
 
 		int count = 0;
 		for (auto idx : old_idx) {
-			oldnewmapping[idx] = count;
+			oldnewmapping[idx.second] = count;
 			count++;
 		}
 
@@ -215,6 +215,7 @@ public:
 			Stats fs = s.second;
 			if (fs.parent >= 0)
 				fs.parent = oldnewmapping[fs.parent];
+			
 			fstats.push_back(fs);
 		}
 		return fstats;
@@ -229,7 +230,6 @@ public:
 		std::unique_lock<std::mutex> lock(profile_mutex());
 		stats().clear();
 		keymap().clear();
-		hierarchy()[tid].pop();
 	}
 
 	static std::map<int, Key> getInverseMap() {
@@ -287,14 +287,14 @@ private:
 		}
 
 		void printTopLine() {
-			for (int j = 0; j < 3; j++) {
+			for (int j = 0; j < 4; j++) {
 				for (int i = 0; i < _colWidth; i++)
 					std::cout << "=";
 				std::cout << "|";
 			}			
 		}
 		void printBottomLine() {
-			for (int i = 0; i < _colWidth*3 + 3; i++)
+			for (int i = 0; i < _colWidth*4 + 4; i++)
 				std::cout << "=";
 		}
 
@@ -303,8 +303,11 @@ private:
 			printcol(node->name);
 
 			char col[100];
-			sprintf(col, "%f sec.", node->stats.total);
+			sprintf(col, "%d (%03.3f sec.)", node->stats.count,
+				node->stats.total/node->stats.count);
 			printcol(std::string(col));
+			sprintf(col, "%03.3f sec.", node->stats.total);
+			printcol(std::string(col));		
 			sprintf(col, "%03d %% of total", int((node->stats.total/total_time) * 100));
 			printcol(std::string(col));
 			std::cout << std::endl;
@@ -328,8 +331,9 @@ private:
 			}
 
 			printTitle("Key");
-			printTitle("Time");
-			printTitle("Percentage");
+			printTitle("Num (Time)");
+			printTitle("Total Time");
+			printTitle("Total %");
 			std::cout << std::endl;
 			printTopLine();
 			std::cout << std::endl;
