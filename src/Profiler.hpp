@@ -5,11 +5,61 @@
 #include <map>
 #include <stack>
 #include <algorithm>
+#include <mutex>
+#include <thread>
+
+#define ROOT_ID 0
 
 class Profiler {
 
 public:
 	typedef std::string Key;
+
+	class KeyMap {
+	public:
+
+		typedef std::map<Key, std::map< std::size_t, int> >::iterator  iter;
+		
+		void clear() {
+			_map.clear();
+		}
+		
+		bool exists(Key k) {
+			if (_map.count(k))
+				return true;
+
+			return false;
+		}
+		
+		bool exists(Key k, std::size_t tid) {
+			if (_map.count(k))
+				if (_map[k].count(tid)) return true;
+
+			return false;
+		}
+
+		iter begin() {
+			return _map.begin();
+		}
+
+		iter end() {
+			return _map.end();
+		}
+		
+		int & operator[](Key k) {
+			std::hash<std::thread::id> hasher;
+			std::size_t tid = hasher(std::this_thread::get_id());
+			return _map[k][tid];
+		}
+		
+		int & get(Key k, std::size_t thread_id) {
+			return _map[k][thread_id];
+		}
+		
+	private:
+		std::map<Key, std::map< std::size_t, int> > _map;
+	};
+
 
 	enum SortingMode {
 		TOTAL_ELAPSED,
@@ -20,15 +70,18 @@ public:
 	class Stats {
 	public:
 		Stats() {}
-		Stats(timespec s, int p) : start(s),
-					   parent(p),
-					   count(0) {}
+		Stats(Key k, timespec s, int p, std::size_t tid) : key(k),
+								   start(s),
+								   parent(p),
+								   count(1),
+								   thread_id(tid) {}
 
 		struct timespec start, finish;
-
+		Key key;
 		double total;
 		long count;
 		int parent;
+		std::size_t thread_id;
 
 		double seconds_elapsed() {
 			double elapsed;
@@ -39,38 +92,52 @@ public:
 	};
 
 	Profiler(const Key & key) : _key(key) {
+		
+		std::unique_lock<std::mutex> lock(profile_mutex());
 
 		timespec starting_time = Profiler::get_time();
+		std::hash<std::thread::id> hasher;
+		std::size_t tid = hasher(std::this_thread::get_id()); 
 
-		if (Profiler::hierarchy().size() == 0) {
-			Profiler::stats().push_back(Stats(starting_time, -1));
-			Profiler::keyToId()["__root__"] = 0;
-			Profiler::hierarchy().push(0);
+		if (!Profiler::keymap().exists("__root__")) {
+			Profiler::stats().push_back(Stats("__root__", starting_time, -1, tid));
+			Profiler::keymap()["__root__"] = 0;
 		}
 
-		if (keyExists(key)) {
-			int id = keyToId()[_key];
+		if (keymap().exists(key, tid)) {
+			int id = keymap().get(_key, tid);
 			Profiler::stats()[id].count++;
 			Profiler::stats()[id].start = starting_time;
-			Profiler::stats()[id].parent = Profiler::hierarchy().top();
-			Profiler::hierarchy().push(id);
+			Profiler::hierarchy()[tid].push(id);
+			//assert should have the same parent
 		}
 		else {
 			int id = Profiler::stats().size();
-			Profiler::keyToId()[key] = id;
-			Profiler::stats().push_back(Stats(starting_time, Profiler::hierarchy().top()));
-			Profiler::hierarchy().push(id);
+			keymap().get(_key,tid) = id;
+			int parent = 0;
+			if (hierarchy()[tid].size() > 0) parent = Profiler::hierarchy()[tid].top();
+			Profiler::stats().push_back(Stats(key,
+							  starting_time,
+							  parent,
+							  tid));
+			Profiler::hierarchy()[tid].push(id);
 		}
 	}
-
+	
 	~Profiler() {
+		std::unique_lock<std::mutex> lock(profile_mutex());
+
+		//TODO refactor
+		std::hash<std::thread::id> hasher;
+		std::size_t tid = hasher(std::this_thread::get_id());
+
 		timespec end_time = Profiler::get_time();
-		Stats & s = Profiler::stats()[keyToId()[_key]];
+		Stats & s = Profiler::stats()[keymap()[_key]];
 		s.finish = end_time;
 		s.total += s.seconds_elapsed();
-		Profiler::hierarchy().pop();
-		Profiler::stats()[0].finish = end_time;
-		Profiler::stats()[0].total = Profiler::stats()[0].seconds_elapsed();
+		Profiler::hierarchy()[tid].pop();
+		Profiler::stats()[ROOT_ID].finish = end_time;
+		Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].seconds_elapsed();
 	}
 
 	static std::vector<Stats> getStatsSorted(SortingMode mode) {
@@ -116,33 +183,73 @@ public:
 		return time;
 	}
 
+	static std::vector<Stats> getFusedStats() {
+
+		std::map<Key, Stats> key_stats;	
+		std::map<int,int> oldnewmapping;
+		std::vector<int> old_idx;
+
+		//accumulate times per key
+		int idx = 0;
+		for (auto s : stats()) {
+			Key key = s.key;
+			if (!key_stats.count(key)) {
+				key_stats[key] = s;
+				old_idx.push_back(idx);		       
+			}
+			else {
+				key_stats[key].count += s.count; 
+				key_stats[key].total += s.seconds_elapsed();
+			}
+			idx++;
+		}
+
+		int count = 0;
+		for (auto idx : old_idx) {
+			oldnewmapping[idx] = count;
+			count++;
+		}
+
+		std::vector<Stats> fstats;
+		for (auto s : key_stats) {
+			Stats fs = s.second;
+			if (fs.parent >= 0)
+				fs.parent = oldnewmapping[fs.parent];
+			fstats.push_back(fs);
+		}
+		return fstats;
+	}
+	
 	static void clear() {
 
+		//TODO refactor
+		std::hash<std::thread::id> hasher;
+		std::size_t tid = hasher(std::this_thread::get_id());
+		
+		std::unique_lock<std::mutex> lock(profile_mutex());
 		stats().clear();
-		keyToId().clear();
-		hierarchy().pop();
+		keymap().clear();
+		hierarchy()[tid].pop();
 	}
 
 	static std::map<int, Key> getInverseMap() {
 		std::map<int, Key>  idToKey;
-		for (auto k : keyToId()) {
-			idToKey[k.second] = k.first;
+		for (auto k : keymap()) {
+			for (auto t : k.second)
+				idToKey[t.second] = k.first;
 		}
 		return idToKey;
 	}
 
 private:
 
-	inline bool keyExists(const Key & key) {
-		return keyToId().count(key);
-	}
-
 	Key _key;
-
-	static std::stack<int> & hierarchy() { static std::stack<int> h; return h; }
+	
+	static std::mutex & profile_mutex() { static std::mutex m; return m; }
+	static std::map<std::size_t, std::stack<int> > & hierarchy() {
+		static std::map<std::size_t, std::stack<int> > h; return h; }
 	static std::vector<Stats> & stats() { static std::vector<Stats> s; return s; }
-	static std::map<Key, int> & keyToId() { static std::map<Key, int> k; return k; }
-
+	static KeyMap & keymap() { static KeyMap k; return k; }       
 	
 	class ConsolePrinter {
 
@@ -152,13 +259,11 @@ private:
 		}
 
 		struct Node {
-			Node(Profiler::Key n, Profiler::Stats s) : name(n), stats(s) {}
+			Node(Profiler::Stats s) : name(s.key), stats(s) {}
 			Profiler::Key name;
 			Profiler::Stats stats;
 			std::vector<Node*> children;
 		};
-
-		std::map<int, Profiler::Key> idToKey = Profiler::getInverseMap();
 
 		void printcol(std::string n) {
 
@@ -208,9 +313,11 @@ private:
 		}
 
 		void print() {
+			std::vector<Profiler::Stats> fstats = Profiler::getFusedStats();
+			
 			std::vector<Node> hierarchy;
-			for (int i = 0; i < Profiler::stats().size(); i++) {
-				hierarchy.push_back(Node(idToKey[i], Profiler::stats()[i]));
+			for (int i = 0; i < fstats.size(); i++) {
+				hierarchy.push_back(Node(fstats[i]));
 			}
 
 			for (int i = 0; i < hierarchy.size(); i++) {
@@ -227,7 +334,7 @@ private:
 			printTopLine();
 			std::cout << std::endl;
 
-			print(&hierarchy[0], 0, Profiler::stats()[0].total);
+			print(&hierarchy[0], 0, fstats[0].total);
 
 			printBottomLine();
 			std::cout << std::endl;
