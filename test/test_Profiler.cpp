@@ -10,7 +10,7 @@ TEST(TestProfiler, Profiler) {
 	
 	{
 		__PROF(P1);
-		usleep(mcs);
+		usleep(mcs);		
 	}
 
 	{
@@ -26,10 +26,21 @@ TEST(TestProfiler, Profiler) {
 
 	}
 
+	{
+		mcs = 150000;
+		__PROF(P4);
+		usleep(mcs);
+		__STOP(P4);
+		mcs = 100000;
+		usleep(mcs);
+		
+	}
+
 	EXPECT_EQ(Profiler::getTimeInMilis("P1"), 200.0);
 	EXPECT_EQ(Profiler::getTimeInMilis("P2"), 500.0);
 	EXPECT_EQ(Profiler::getTimeInMilis("P3"), 100.0);
-	EXPECT_EQ(Profiler::getTimeInMilis("__root__"), 700.0);
+	EXPECT_EQ(Profiler::getTimeInMilis("P4"), 150.0);
+	EXPECT_EQ(Profiler::getTimeInMilis("__root__"), 850.0);
 
 	Profiler::print();
 	Profiler::clear();

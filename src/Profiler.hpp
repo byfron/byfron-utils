@@ -11,6 +11,7 @@
 #define ROOT_ID 0
 
 #define __PROF(x) Profiler profile_##x(#x);
+#define __STOP(x) profile_##x.stop();
 
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> time_point_t;
 
@@ -102,7 +103,7 @@ public:
 		}
 	};
 
-	Profiler(const Key & key) : _key(key) {
+	Profiler(const Key & key) : _key(key), _running(true) {
 		
 		std::unique_lock<std::mutex> lock(profile_mutex());
 
@@ -137,6 +138,13 @@ public:
 	}
 	
 	~Profiler() {
+		stop();
+	}
+
+	void stop() {				
+
+		if(not _running) return;
+		
 		time_point_t end_time = get_time();
 
 		std::unique_lock<std::mutex> lock(profile_mutex());
@@ -153,8 +161,10 @@ public:
 			Profiler::stats()[ROOT_ID].finish = end_time;
 			Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].nanoseconds_elapsed();
 		}
-	}
 
+		_running = false;
+	}
+	
 	static std::vector<Stats> sortStats(const SortingMode mode, const std::vector<Stats> stats) {	
 
 		std::vector<Stats> sorted = stats;
@@ -267,6 +277,7 @@ public:
 private:
 
 	Key _key;
+	bool _running;
 	
 	static std::mutex & profile_mutex() { static std::mutex m; return m; }
 	static std::map<std::size_t, std::stack<int> > & hierarchy() {
