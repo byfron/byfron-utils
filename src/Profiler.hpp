@@ -74,12 +74,14 @@ public:
 								   start(s),
 								   parent(p),
 								   count(1),
+								   paralel(false),
 								   thread_id(tid) {}
 
 		struct timespec start, finish;
 		Key key;
 		double total;
 		long count;
+	        bool paralel;
 		int parent;
 		std::size_t thread_id;
 
@@ -101,6 +103,7 @@ public:
 
 		if (!Profiler::keymap().exists("__root__")) {
 			Profiler::stats().push_back(Stats("__root__", starting_time, -1, tid));
+			Profiler::stats()[0].finish = starting_time;
 			Profiler::keymap()["__root__"] = 0;
 		}
 
@@ -134,16 +137,18 @@ public:
 		timespec end_time = Profiler::get_time();
 		Stats & s = Profiler::stats()[keymap()[_key]];
 		s.finish = end_time;
-		s.total += s.seconds_elapsed();
+		s.total += s.seconds_elapsed();		
 		Profiler::hierarchy()[tid].pop();
-		Profiler::stats()[ROOT_ID].finish = end_time;
-		Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].seconds_elapsed();
+		if (end_time.tv_sec > Profiler::stats()[ROOT_ID].finish.tv_sec) {
+			Profiler::stats()[ROOT_ID].finish = end_time;
+			Profiler::stats()[ROOT_ID].total = Profiler::stats()[ROOT_ID].seconds_elapsed();
+		}
 	}
 
-	static std::vector<Stats> getStatsSorted(SortingMode mode) {
+	static std::vector<Stats> sortStats(const SortingMode mode, const std::vector<Stats> stats) {	
 
-		std::vector<Stats> sorted = Profiler::stats();
-
+		std::vector<Stats> sorted = stats;
+		
 		switch(mode) {
 		case TOTAL_ELAPSED: {
 		        struct {
@@ -173,7 +178,7 @@ public:
 			std::sort(sorted.begin(), sorted.end(), comp);
 			break;
 		};
-
+		
 		return sorted;
 	}
 
@@ -198,7 +203,8 @@ public:
 				old_idx[key] = idx;		       
 			}
 			else {
-				key_stats[key].count += s.count; 
+				key_stats[key].count += s.count;
+				key_stats[key].paralel = true;
 				key_stats[key].total += s.seconds_elapsed();
 			}
 			idx++;
@@ -283,7 +289,6 @@ private:
 			std::cout << title;
 			for(int i = 0; i < spaces_left/2 + spaces_left%2; i++) std::cout << " ";
 			std::cout << "|";
-
 		}
 
 		void printTopLine() {
@@ -300,15 +305,32 @@ private:
 
 		void print(Node *node, int level, float total_time) {
 
-			printcol(node->name);
+			std::string name = node->name;
+			if (name.size() > _colWidth) 
+				name.resize(_colWidth);
+			
+			printcol(name);
 
 			char col[100];
-			sprintf(col, "%d (%03.3f sec.)", node->stats.count,
+			sprintf(col, "%d/%c (%03.3f sec.)", node->stats.count,
+				node->stats.paralel?'P':'S',
 				node->stats.total/node->stats.count);
 			printcol(std::string(col));
 			sprintf(col, "%03.3f sec.", node->stats.total);
-			printcol(std::string(col));		
-			sprintf(col, "%03d %% of total", int((node->stats.total/total_time) * 100));
+			printcol(std::string(col));
+
+			float perc;
+			if (node->stats.paralel) {
+				perc = ((node->stats.total/node->stats.count)/total_time) * 100;
+			}
+			else {
+				perc = ((node->stats.total)/total_time) * 100;
+			}
+			
+			sprintf(col, "%03d%% (%03d%% of total)",
+				int((node->stats.total/total_time) * 100),
+				int(perc));
+
 			printcol(std::string(col));
 			std::cout << std::endl;
 			for (auto child : node->children)

@@ -2,7 +2,8 @@
 #include "Profiler.hpp"
 
 TEST(TestProfiler, profile) {
-	
+
+	#pragma omp parallel for	
 	for (int i = 0; i < 3; i++)
 	{
 		Profiler p("testing no par");
@@ -16,7 +17,7 @@ TEST(TestProfiler, profile) {
 		sleep(1);
 
 		{
-			Profiler p2("son of testing");
+			Profiler p2("son of testing sadasd asdf asdf adsf");
 			sleep(2);
 		}
 
@@ -26,10 +27,10 @@ TEST(TestProfiler, profile) {
 		}
 	}
 
-	{
-		Profiler p("testing");
-		sleep(2);
-	}
+	// {
+	// 	Profiler p("testing");
+	// 	sleep(2);
+	// }
 	
 	{
 		Profiler p("testing second");
