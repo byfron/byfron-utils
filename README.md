@@ -1,0 +1,1 @@
+Minimalistic header-only C++ utils
