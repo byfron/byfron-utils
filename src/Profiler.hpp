@@ -14,8 +14,9 @@
 #define __PROF(x) Profiler profile_##x(#x);
 #define __STOP(x) profile_##x.stop();
 
-typedef std::chrono::time_point<std::chrono::high_resolution_clock> time_point_t;
+namespace ByfronUtils {
 
+typedef std::chrono::time_point<std::chrono::high_resolution_clock> time_point_t;
 
 class Profiler {
 
@@ -431,3 +432,5 @@ public:
 	 	printer.print();
 	}
 };
+
+}

@@ -2,6 +2,8 @@
 #include "Pool.hpp"
 #include <unistd.h>
 
+using namespace ByfronUtils;
+
 TEST(TestPool, Pool) {
 
 	std::cout << "Pool" << std::endl;

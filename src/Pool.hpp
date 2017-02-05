@@ -2,6 +2,8 @@
 #include <memory>
 #include <queue>
 
+namespace ByfronUtils {
+	
 template <typename T>
 class Pool : public std::enable_shared_from_this< Pool<T> >{
 
@@ -52,3 +54,5 @@ public:
 	
 };
 
+
+}

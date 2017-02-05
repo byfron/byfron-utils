@@ -2,6 +2,7 @@
 #include "Profiler.hpp"
 #include <unistd.h>
 
+using namespace ByfronUtils;
 unsigned int microseconds;
 
 TEST(TestProfiler, Profiler) {
