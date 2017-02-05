@@ -19,5 +19,17 @@ TEST(TestPool, Pool) {
 	EXPECT_TRUE(*v == 45);
 	}
 
+	EXPECT_TRUE(not pool->empty());
+	{
+		std::shared_ptr<int> second_v;
+		{
+			auto v = pool->acquire();
+			second_v = v;
+			EXPECT_TRUE(pool->empty());
+			EXPECT_TRUE(*v == 45);
+		}
+		
+		EXPECT_TRUE(pool->empty());
+	}
 	EXPECT_TRUE(not pool->empty());	
 }

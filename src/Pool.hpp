@@ -37,9 +37,9 @@ public:
 		m_pool.push(std::move(t));
 	}
 	
-	PtrType acquire() {
+	std::shared_ptr<T> acquire() {
 		assert(!m_pool.empty());
-		PtrType tmp(m_pool.front().release(), ExternalDeleter(this->shared_from_this()));
+		std::shared_ptr<T> tmp(m_pool.front().release(), ExternalDeleter(this->shared_from_this()));	       
 		m_pool.pop();
 		return std::move(tmp);
 	}
